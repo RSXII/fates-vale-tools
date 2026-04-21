@@ -236,7 +236,7 @@
       "father": "bessas",
       "adoptive": "kara",
       "spouse": null,
-      "img": null,
+      "img": "images/ilonna_aigner_ft.png",
       "note": "Former High Priestess — retired to Gringaw"
     },
     {
@@ -314,7 +314,7 @@
       "father": "gelimer",
       "adoptive": "ilonna",
       "spouse": null,
-      "img": "Maret Aigner.png",
+      "img": "images/maret_aigner_ft.png",
       "note": "Current High Priestess & Duchess — age 34. Born Obsidiancourt."
     },
     {
@@ -418,7 +418,7 @@
       "father": "april",
       "adoptive": "maret",
       "spouse": null,
-      "img": "Amálie Aigner Praying.png",
+      "img": "images/amalie_aigner_ft.png",
       "note": "Chosen heir of the Greywood — age 14. Ascends at 16."
     },
     {
@@ -431,7 +431,7 @@
       "father": "seth",
       "adoptive": null,
       "spouse": null,
-      "img": null,
+      "img": "images/alfius_barleyford_ft.png",
       "note": null
     }
   ]
