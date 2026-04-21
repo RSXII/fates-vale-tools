@@ -124,7 +124,7 @@
 
       .tree-wrap {
         padding: 36px 40px 60px;
-        overflow: auto;
+        overflow: hidden;
       }
 
       #tree {
@@ -809,6 +809,100 @@
 
           gNodes.appendChild(g);
         }
+        // ═══════════════════════════════════════════
+        // PAN & ZOOM
+        // ═══════════════════════════════════════════
+        (function () {
+          const wrap = document.querySelector(".tree-wrap");
+          let scale = 1,
+            tx = 0,
+            ty = 0;
+          let dragging = false,
+            startX,
+            startY,
+            startTx,
+            startTy;
+
+          // Apply transform to svg
+          function apply() {
+            svg.style.transform = `translate(${tx}px, ${ty}px) scale(${scale})`;
+            svg.style.transformOrigin = "0 0";
+          }
+
+          // Zoom on scroll
+          wrap.addEventListener(
+            "wheel",
+            (e) => {
+              e.preventDefault();
+              const rect = wrap.getBoundingClientRect();
+              const mx = e.clientX - rect.left;
+              const my = e.clientY - rect.top;
+              const delta = e.deltaY > 0 ? 0.9 : 1.1;
+              const newScale = Math.min(Math.max(scale * delta, 0.2), 3);
+              // Zoom toward cursor position
+              tx = mx - (mx - tx) * (newScale / scale);
+              ty = my - (my - ty) * (newScale / scale);
+              scale = newScale;
+              apply();
+            },
+            { passive: false },
+          );
+
+          // Pan on drag
+          wrap.addEventListener("mousedown", (e) => {
+            dragging = true;
+            startX = e.clientX;
+            startY = e.clientY;
+            startTx = tx;
+            startTy = ty;
+            wrap.style.cursor = "grabbing";
+          });
+
+          window.addEventListener("mousemove", (e) => {
+            if (!dragging) return;
+            tx = startTx + (e.clientX - startX);
+            ty = startTy + (e.clientY - startY);
+            apply();
+          });
+
+          window.addEventListener("mouseup", () => {
+            dragging = false;
+            wrap.style.cursor = "grab";
+          });
+
+          // Default cursor
+          wrap.style.cursor = "grab";
+          wrap.style.userSelect = "none";
+          wrap.style.overflow = "hidden";
+
+          // Reset button
+          const btn = document.createElement("button");
+          btn.textContent = "Reset View";
+          btn.style.cssText = `
+    position: fixed; bottom: 20px; right: 20px;
+    background: #1a1a1e; border: 1px solid #6a5828;
+    color: #c9a84c; font-family: Cinzel, serif;
+    font-size: 11px; letter-spacing: 0.08em;
+    padding: 8px 14px; border-radius: 4px;
+    cursor: pointer; z-index: 100;
+    text-transform: uppercase;
+  `;
+          btn.addEventListener("click", () => {
+            scale = 1;
+            tx = 0;
+            ty = 0;
+            apply();
+          });
+          btn.addEventListener(
+            "mouseenter",
+            () => (btn.style.borderColor = "#c9a84c"),
+          );
+          btn.addEventListener(
+            "mouseleave",
+            () => (btn.style.borderColor = "#6a5828"),
+          );
+          document.body.appendChild(btn);
+        })();
       }
 
       // ── Roman numerals helper ──
