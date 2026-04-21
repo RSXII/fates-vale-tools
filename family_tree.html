@@ -1,613 +1,829 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="en">
-<head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Family Tree</title>
-<style>
-  @import url('https://fonts.googleapis.com/css2?family=Cinzel:wght@400;600;700&family=Crimson+Text:ital,wght@0,400;0,600;1,400&display=swap');
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Family Tree</title>
+    <style>
+      @import url("https://fonts.googleapis.com/css2?family=Cinzel:wght@400;600;700&family=Crimson+Text:ital,wght@0,400;0,600;1,400&display=swap");
 
-  :root {
-    --bg:               #0b0b0d;
-    --surface:          #131316;
-    --border:           #2a2a2e;
-    --text:             #d4c9b8;
-    --text-dim:         #6a6460;
-    --gold:             #c9a84c;
-    --gold-dim:         #6a5828;
-    --priestess-fill:   #0f2d47;
-    --current-stroke:   #4caf50;
-    --bio-fill:         #14141a;
-    --bio-stroke:       #35322c;
-    --unknown-fill:     #111114;
-    --unknown-stroke:   #383530;
-    --marriage-line:    #6a5828;
-    --bio-line:         #3a3530;
-    --adoptive-line:    #2a6a9a;
-    --origin-line:      #1a5a8a;
-  }
-
-  * { box-sizing: border-box; margin: 0; padding: 0; }
-
-  body {
-    background: var(--bg);
-    color: var(--text);
-    font-family: 'Crimson Text', Georgia, serif;
-    overflow-x: auto;
-  }
-
-  header {
-    padding: 24px 40px 14px;
-    border-bottom: 1px solid var(--border);
-    background: var(--surface);
-    display: flex;
-    align-items: baseline;
-    gap: 20px;
-  }
-
-  header h1 {
-    font-family: 'Cinzel', serif;
-    font-size: 20px;
-    font-weight: 700;
-    color: var(--gold);
-    letter-spacing: 0.1em;
-    text-transform: uppercase;
-  }
-
-  header p {
-    font-size: 13px;
-    color: var(--text-dim);
-    font-style: italic;
-  }
-
-  .legend {
-    display: flex;
-    gap: 24px;
-    padding: 11px 40px;
-    border-bottom: 1px solid var(--border);
-    background: #0f0f12;
-    flex-wrap: wrap;
-    align-items: center;
-  }
-
-  .legend-item {
-    display: flex;
-    align-items: center;
-    gap: 7px;
-    font-size: 10px;
-    color: var(--text-dim);
-    font-family: 'Cinzel', serif;
-    letter-spacing: 0.05em;
-    text-transform: uppercase;
-  }
-
-  .ls {
-    width: 15px; height: 15px;
-    border-radius: 3px; border: 1.5px solid;
-    flex-shrink: 0;
-  }
-  .ll { width: 32px; height: 2px; flex-shrink: 0; }
-  .ll-adoptive {
-    background: repeating-linear-gradient(
-      90deg, var(--adoptive-line) 0, var(--adoptive-line) 5px,
-      transparent 5px, transparent 9px);
-  }
-  .ll-bio      { background: var(--bio-line); }
-  .ll-origin   {
-    background: repeating-linear-gradient(
-      90deg, var(--origin-line) 0, var(--origin-line) 8px,
-      transparent 8px, transparent 12px);
-  }
-  .ll-marriage { background: var(--marriage-line); }
-
-  .tree-wrap {
-    padding: 36px 40px 60px;
-    overflow: auto;
-  }
-
-  #tree { display: block; overflow: visible; }
-
-  /* Loading / error states */
-  .state {
-    padding: 60px 40px;
-    font-family: 'Cinzel', serif;
-    font-size: 14px;
-    color: var(--text-dim);
-    letter-spacing: 0.06em;
-  }
-  .state.error { color: #a04040; }
-
-  /* Tooltip */
-  .tooltip {
-    position: fixed;
-    background: #1a1a1e;
-    border: 1px solid var(--gold-dim);
-    border-radius: 4px;
-    padding: 10px 14px;
-    font-size: 13px;
-    color: var(--text);
-    pointer-events: none;
-    opacity: 0;
-    transition: opacity 0.12s;
-    z-index: 200;
-    max-width: 260px;
-    line-height: 1.65;
-    box-shadow: 0 4px 24px rgba(0,0,0,0.7);
-  }
-  .tooltip.show { opacity: 1; }
-  .tip-name {
-    font-family: 'Cinzel', serif;
-    font-size: 10px;
-    color: var(--gold);
-    letter-spacing: 0.06em;
-    text-transform: uppercase;
-    display: block;
-    margin-bottom: 5px;
-  }
-  .tip-line {
-    font-style: italic;
-    font-size: 12px;
-    color: #8a8078;
-    display: block;
-  }
-</style>
-</head>
-<body>
-
-<header>
-  <h1 id="houseTitle">Loading…</h1>
-  <p id="houseSubtitle"></p>
-</header>
-
-<div class="legend" id="legend"></div>
-<div class="tree-wrap" id="treeWrap">
-  <div class="state" id="stateMsg">Loading family data…</div>
-</div>
-<div class="tooltip" id="tip"></div>
-
-<script>
-// ═══════════════════════════════════════════════════
-// BOOTSTRAP — load JSON from ?house= param
-// ═══════════════════════════════════════════════════
-const params   = new URLSearchParams(window.location.search);
-const dataFile = params.get('house') || 'house_aigner';
-const stateEl  = document.getElementById('stateMsg');
-
-fetch(`${dataFile}.json`)
-  .then(r => { if (!r.ok) throw new Error(r.status); return r.json(); })
-  .then(data => { stateEl.remove(); buildTree(data); })
-  .catch(err => {
-    stateEl.className = 'state error';
-    stateEl.textContent = `Could not load "${dataFile}.json" — ${err.message}`;
-  });
-
-// ═══════════════════════════════════════════════════
-// RENDERER
-// ═══════════════════════════════════════════════════
-function buildTree(data) {
-  const { house, subtitle, spine, layout, members } = data;
-
-  // ── Layout constants ──
-  const ROW_H    = layout?.row_height  ?? 130;
-  const NW       = layout?.node_w      ?? 148;
-  const NH       = layout?.node_h      ?? 60;
-  const COL_GAP  = layout?.col_gap     ?? 172;
-  const SPINE_X  = spine?.enabled ? (layout?.spine_x ?? 90) : 0;
-  const COL0     = spine?.enabled
-    ? (layout?.col_start ?? 290)
-    : (layout?.col_start ?? 120);
-  const PAD_TOP  = 34;
-  const PAD_SIDE = 20;
-
-  const spineColor = spine?.color ?? '#3a8fc4';
-
-  // ── Header ──
-  document.getElementById('houseTitle').textContent    = house;
-  document.getElementById('houseSubtitle').textContent = subtitle ?? '';
-  document.title = house;
-
-  // ── Legend ──
-  const legendEl = document.getElementById('legend');
-  const legendItems = [
-    ...(spine?.enabled ? [
-      { type:'swatch', fill:'#0f2d47', stroke: spineColor, label: spine.label ?? 'Succession line' },
-      { type:'swatch', fill:'#0f2d47', stroke:'#4caf50',   label:'Current head' },
-    ] : []),
-    { type:'swatch', fill:'#14141a', stroke:'#35322c', label:'Biological family' },
-    ...(spine?.enabled ? [
-      { type:'line', cls:'ll-adoptive', label:'Institutional succession' },
-      { type:'line', cls:'ll-origin',   label:'Chosen from' },
-    ] : []),
-    { type:'line', cls:'ll-bio',      label:'Biological descent' },
-    { type:'line', cls:'ll-marriage', label:'Marriage' },
-  ];
-
-  for (const item of legendItems) {
-    const div = document.createElement('div');
-    div.className = 'legend-item';
-    if (item.type === 'swatch') {
-      div.innerHTML = `<div class="ls" style="background:${item.fill};border-color:${item.stroke}"></div>${item.label}`;
-    } else {
-      div.innerHTML = `<div class="ll ${item.cls}"></div>${item.label}`;
-    }
-    legendEl.appendChild(div);
-  }
-
-  // ── Position map ──
-  function rowY(row) { return PAD_TOP + (row - 1) * ROW_H + ROW_H / 2; }
-  function colX(col) {
-    if (col === 'spine') return SPINE_X;
-    return COL0 + (col - 1) * COL_GAP;
-  }
-
-  const pos = {};
-  for (const m of members) {
-    pos[m.id] = { x: colX(m.col), y: rowY(m.row) };
-  }
-
-  function byId(id) { return members.find(m => m.id === id); }
-
-  // ── Canvas size ──
-  const maxRow  = Math.max(...members.map(m => m.row));
-  const bioCols = members.filter(m => m.col !== 'spine').map(m => m.col);
-  const maxCol  = bioCols.length ? Math.max(...bioCols) : 1;
-  const svgW    = PAD_SIDE + COL0 + (maxCol - 1) * COL_GAP + NW + PAD_SIDE;
-  const svgH    = PAD_TOP + maxRow * ROW_H + 40;
-
-  // ── SVG setup ──
-  const NS  = 'http://www.w3.org/2000/svg';
-  const svg = document.createElementNS(NS, 'svg');
-  svg.setAttribute('id',      'tree');
-  svg.setAttribute('width',   svgW);
-  svg.setAttribute('height',  svgH);
-  svg.setAttribute('viewBox', `0 0 ${svgW} ${svgH}`);
-  document.getElementById('treeWrap').appendChild(svg);
-
-  function el(tag, attrs = {}, text = '') {
-    const e = document.createElementNS(NS, tag);
-    for (const [k, v] of Object.entries(attrs)) e.setAttribute(k, v);
-    if (text) e.textContent = text;
-    return e;
-  }
-
-  // ── Defs ──
-  const defs = el('defs');
-  function makeArrow(id, color) {
-    const m = el('marker', { id, markerWidth:'7', markerHeight:'7', refX:'6', refY:'3.5', orient:'auto' });
-    m.appendChild(el('path', { d:'M0,0 L0,7 L7,3.5 z', fill:color }));
-    return m;
-  }
-  defs.appendChild(makeArrow('arr-bio',      '#4a4540'));
-  defs.appendChild(makeArrow('arr-adoptive', spineColor));
-  defs.appendChild(makeArrow('arr-origin',   '#1a5a8a'));
-  svg.appendChild(defs);
-
-  // ── Layer groups ──
-  const gBg    = el('g');
-  const gLines = el('g');
-  const gNodes = el('g');
-  svg.appendChild(gBg);
-  svg.appendChild(gLines);
-  svg.appendChild(gNodes);
-
-  // ── Row bands ──
-  for (let r = 1; r <= maxRow; r++) {
-    const y = rowY(r);
-    if (r % 2 === 0) {
-      gBg.appendChild(el('rect', {
-        x:0, y: y - NH/2 - 10,
-        width: svgW, height: NH + 20,
-        fill:'rgba(255,255,255,0.012)',
-      }));
-    }
-    // row number label
-    const t = el('text', {
-      x: spine?.enabled ? 8 : 6,
-      y: y + 4,
-      fill:'#252528',
-      'font-family':'Cinzel, serif',
-      'font-size':'9',
-      'letter-spacing':'0.06em',
-    });
-    t.textContent = `${toRoman(r)}`;
-    gBg.appendChild(t);
-  }
-
-  // ── Spine divider ──
-  if (spine?.enabled) {
-    gBg.appendChild(el('line', {
-      x1: SPINE_X + NW/2 + 18, y1: PAD_TOP - 14,
-      x2: SPINE_X + NW/2 + 18, y2: svgH - 20,
-      stroke:'#1a2a3a', 'stroke-width':1, 'stroke-dasharray':'3 7',
-    }));
-    // spine column label
-    const sl = el('text', {
-      x: SPINE_X, y: PAD_TOP - 14,
-      'text-anchor':'middle',
-      'font-family':'Cinzel, serif',
-      'font-size':'8',
-      'letter-spacing':'0.1em',
-      fill: spineColor,
-      opacity:'0.7',
-    });
-    sl.textContent = (spine.label ?? 'Succession Line').toUpperCase();
-    gBg.appendChild(sl);
-  }
-
-  // ── Node colour ──
-  function nodeStyle(type) {
-    switch (type) {
-      case 'priestess': return { fill:'#0d2b43', stroke: spineColor,   sw:1.5 };
-      case 'current':   return { fill:'#0d2b43', stroke:'#4caf50',     sw:2.5 };
-      case 'heir':      return { fill:'#091e30', stroke: spineColor,   sw:1.5 };
-      case 'unknown':   return { fill:'#111114', stroke:'#383530',     sw:1.5 };
-      default:          return { fill:'#14141a', stroke:'#35322c',     sw:1.5 };
-    }
-  }
-
-  // ── Marriage lines ──
-  const drawnMarriages = new Set();
-  for (const n of members) {
-    if (!n.spouse) continue;
-    const key = [n.id, n.spouse].sort().join('|');
-    if (drawnMarriages.has(key)) continue;
-    drawnMarriages.add(key);
-    const a = pos[n.id], b = pos[n.spouse];
-    if (!a || !b) continue;
-    const left  = a.x < b.x ? a : b;
-    const right = a.x < b.x ? b : a;
-    const x1 = left.x  + NW/2;
-    const x2 = right.x - NW/2;
-    const y  = a.y;
-    gLines.appendChild(el('line', { x1, y1:y, x2, y2:y, stroke:'#6a5828', 'stroke-width':1.5 }));
-    gLines.appendChild(el('circle', { cx:(x1+x2)/2, cy:y, r:3, fill:'#6a5828' }));
-  }
-
-  // ── Biological descent lines ──
-  // Group children by their parent-pair key
-  const drawnDrops = new Set();
-
-  for (const n of members) {
-    if (n.col === 'spine') continue; // spine nodes use origin lines
-    const parents = [n.mother, n.father].filter(Boolean);
-    if (!parents.length) continue;
-
-    const child = pos[n.id];
-    let px, py;
-
-    if (parents.length === 2) {
-      const pa = pos[parents[0]], pb = pos[parents[1]];
-      if (!pa || !pb) continue;
-      px = (pa.x + pb.x) / 2;
-      py = pa.y;
-    } else {
-      const pa = pos[parents[0]];
-      if (!pa) continue;
-      px = pa.x;
-      py = pa.y;
-    }
-
-    const dropKey = `${parents.sort().join('+')}=>${n.id}`;
-    if (drawnDrops.has(dropKey)) continue;
-    drawnDrops.add(dropKey);
-
-    const startY = py  + NH/2;
-    const endY   = child.y - NH/2;
-    const midY   = startY + (endY - startY) * 0.45;
-
-    gLines.appendChild(el('path', {
-      d: `M${px},${startY} L${px},${midY} L${child.x},${midY} L${child.x},${endY}`,
-      fill:'none', stroke:'#3a3530', 'stroke-width':1.5,
-      'marker-end':'url(#arr-bio)',
-    }));
-  }
-
-  // ── Priestess succession (dotted vertical spine) ──
-  if (spine?.enabled) {
-    const spineNodes = members
-      .filter(m => m.col === 'spine')
-      .sort((a, b) => a.row - b.row);
-
-    for (let i = 0; i < spineNodes.length - 1; i++) {
-      const a = spineNodes[i], b = spineNodes[i + 1];
-      // Only draw if b.adoptive === a.id
-      if (b.adoptive !== a.id) continue;
-      const pa = pos[a.id], pb = pos[b.id];
-      gLines.appendChild(el('line', {
-        x1: SPINE_X, y1: pa.y + NH/2,
-        x2: SPINE_X, y2: pb.y - NH/2,
-        stroke: spineColor, 'stroke-width':1.5,
-        'stroke-dasharray':'6 4',
-        'marker-end':'url(#arr-adoptive)',
-      }));
-    }
-  }
-
-  // ── Origin lines (biological parents → spine node) ──
-  if (spine?.enabled) {
-    for (const n of members) {
-      if (n.col !== 'spine') continue;
-      const parents = [n.mother, n.father].filter(Boolean);
-      if (!parents.length) continue;
-
-      const spinePos = pos[n.id];
-      const parentRow = byId(parents[0])?.row;
-      if (!parentRow) continue;
-
-      let px;
-      if (parents.length === 2) {
-        const pa = pos[parents[0]], pb = pos[parents[1]];
-        if (!pa || !pb) continue;
-        px = (pa.x + pb.x) / 2;
-      } else {
-        const pa = pos[parents[0]];
-        if (!pa) continue;
-        px = pa.x;
+      :root {
+        --bg: #0b0b0d;
+        --surface: #131316;
+        --border: #2a2a2e;
+        --text: #d4c9b8;
+        --text-dim: #6a6460;
+        --gold: #c9a84c;
+        --gold-dim: #6a5828;
+        --priestess-fill: #0f2d47;
+        --current-stroke: #4caf50;
+        --bio-fill: #14141a;
+        --bio-stroke: #35322c;
+        --unknown-fill: #111114;
+        --unknown-stroke: #383530;
+        --marriage-line: #6a5828;
+        --bio-line: #3a3530;
+        --adoptive-line: #2a6a9a;
+        --origin-line: #1a5a8a;
       }
 
-      const dropY  = rowY(parentRow) + NH/2 + 20;
-      const lineStyle = {
-        stroke:'#1a5a8a', 'stroke-width':1.5, 'stroke-dasharray':'5 4',
-      };
+      * {
+        box-sizing: border-box;
+        margin: 0;
+        padding: 0;
+      }
 
-      // Drop from parent midpoint
-      gLines.appendChild(el('line', {
-        x1:px, y1: rowY(parentRow) + NH/2,
-        x2:px, y2: dropY,
-        ...lineStyle,
-      }));
+      body {
+        background: var(--bg);
+        color: var(--text);
+        font-family: "Crimson Text", Georgia, serif;
+        overflow-x: auto;
+      }
 
-      // Horizontal run left to spine
-      gLines.appendChild(el('line', {
-        x1:px,      y1: dropY,
-        x2: SPINE_X, y2: dropY,
-        ...lineStyle,
-      }));
+      header {
+        padding: 24px 40px 14px;
+        border-bottom: 1px solid var(--border);
+        background: var(--surface);
+        display: flex;
+        align-items: baseline;
+        gap: 20px;
+      }
 
-      // Drop down to spine node
-      gLines.appendChild(el('line', {
-        x1: SPINE_X, y1: dropY,
-        x2: SPINE_X, y2: spinePos.y - NH/2,
-        ...lineStyle,
-        'marker-end':'url(#arr-origin)',
-      }));
-    }
-  }
+      header h1 {
+        font-family: "Cinzel", serif;
+        font-size: 20px;
+        font-weight: 700;
+        color: var(--gold);
+        letter-spacing: 0.1em;
+        text-transform: uppercase;
+      }
 
-  // ── Draw nodes ──
-  const tip = document.getElementById('tip');
+      header p {
+        font-size: 13px;
+        color: var(--text-dim);
+        font-style: italic;
+      }
 
-  for (const n of members) {
-    const p  = pos[n.id];
-    const st = nodeStyle(n.type);
-    const nx = p.x - NW/2;
-    const ny = p.y - NH/2;
+      .legend {
+        display: flex;
+        gap: 24px;
+        padding: 11px 40px;
+        border-bottom: 1px solid var(--border);
+        background: #0f0f12;
+        flex-wrap: wrap;
+        align-items: center;
+      }
 
-    const g = el('g');
-    g.style.cursor = 'default';
+      .legend-item {
+        display: flex;
+        align-items: center;
+        gap: 7px;
+        font-size: 10px;
+        color: var(--text-dim);
+        font-family: "Cinzel", serif;
+        letter-spacing: 0.05em;
+        text-transform: uppercase;
+      }
 
-    // Shadow
-    g.appendChild(el('rect', {
-      x:nx+3, y:ny+3, width:NW, height:NH,
-      rx:5, ry:5, fill:'rgba(0,0,0,0.45)',
-    }));
+      .ls {
+        width: 15px;
+        height: 15px;
+        border-radius: 3px;
+        border: 1.5px solid;
+        flex-shrink: 0;
+      }
+      .ll {
+        width: 32px;
+        height: 2px;
+        flex-shrink: 0;
+      }
+      .ll-adoptive {
+        background: repeating-linear-gradient(
+          90deg,
+          var(--adoptive-line) 0,
+          var(--adoptive-line) 5px,
+          transparent 5px,
+          transparent 9px
+        );
+      }
+      .ll-bio {
+        background: var(--bio-line);
+      }
+      .ll-origin {
+        background: repeating-linear-gradient(
+          90deg,
+          var(--origin-line) 0,
+          var(--origin-line) 8px,
+          transparent 8px,
+          transparent 12px
+        );
+      }
+      .ll-marriage {
+        background: var(--marriage-line);
+      }
 
-    // Main rect
-    g.appendChild(el('rect', {
-      x:nx, y:ny, width:NW, height:NH,
-      rx:5, ry:5,
-      fill:st.fill, stroke:st.stroke, 'stroke-width':st.sw,
-    }));
+      .tree-wrap {
+        padding: 36px 40px 60px;
+        overflow: auto;
+      }
 
-    // Portrait slot
-    const PS = NH - 8;
-    const px2 = nx + 4, py2 = ny + 4;
-    g.appendChild(el('rect', {
-      x:px2, y:py2, width:PS, height:PS,
-      rx:3, ry:3,
-      fill:'#0a0a0c', stroke:st.stroke,
-      'stroke-width':'0.75', opacity:'0.8',
-    }));
+      #tree {
+        display: block;
+        overflow: visible;
+      }
 
-    // Silhouette icon
-    const scx = px2 + PS/2;
-    const sg  = el('g', { opacity:'0.28' });
-    sg.appendChild(el('circle', {
-      cx:scx, cy:py2 + PS*0.33, r: PS*0.18, fill:st.stroke,
-    }));
-    sg.appendChild(el('path', {
-      d:`M${scx-PS*0.2},${py2+PS*0.96} Q${scx-PS*0.12},${py2+PS*0.58} ${scx},${py2+PS*0.56} Q${scx+PS*0.12},${py2+PS*0.58} ${scx+PS*0.2},${py2+PS*0.96}`,
-      fill:st.stroke,
-    }));
-    g.appendChild(sg);
+      /* Loading / error states */
+      .state {
+        padding: 60px 40px;
+        font-family: "Cinzel", serif;
+        font-size: 14px;
+        color: var(--text-dim);
+        letter-spacing: 0.06em;
+      }
+      .state.error {
+        color: #a04040;
+      }
 
-    // Portrait token indicator
-    if (n.img) {
-      g.appendChild(el('text', {
-        x: scx, y: py2 + PS - 3,
-        'text-anchor':'middle', 'font-size':'6.5',
-        fill:st.stroke, opacity:'0.75',
-        'font-family':'Crimson Text,serif', 'font-style':'italic',
-      }, '⬡'));
-    }
+      /* Tooltip */
+      .tooltip {
+        position: fixed;
+        background: #1a1a1e;
+        border: 1px solid var(--gold-dim);
+        border-radius: 4px;
+        padding: 10px 14px;
+        font-size: 13px;
+        color: var(--text);
+        pointer-events: none;
+        opacity: 0;
+        transition: opacity 0.12s;
+        z-index: 200;
+        max-width: 260px;
+        line-height: 1.65;
+        box-shadow: 0 4px 24px rgba(0, 0, 0, 0.7);
+      }
+      .tooltip.show {
+        opacity: 1;
+      }
+      .tip-name {
+        font-family: "Cinzel", serif;
+        font-size: 10px;
+        color: var(--gold);
+        letter-spacing: 0.06em;
+        text-transform: uppercase;
+        display: block;
+        margin-bottom: 5px;
+      }
+      .tip-line {
+        font-style: italic;
+        font-size: 12px;
+        color: #8a8078;
+        display: block;
+      }
+    </style>
+  </head>
+  <body>
+    <header>
+      <h1 id="houseTitle">Loading…</h1>
+      <p id="houseSubtitle"></p>
+    </header>
 
-    // Name — right of portrait
-    const textCX = nx + PS + 10 + (NW - PS - 14) / 2;
-    const words  = n.label.split(' ');
-    let lines;
-    if (words.length <= 2)      lines = [n.label];
-    else if (words.length === 3) lines = [words.slice(0,2).join(' '), words[2]];
-    else {
-      const mid = Math.ceil(words.length / 2);
-      lines = [words.slice(0,mid).join(' '), words.slice(mid).join(' ')];
-    }
+    <div class="legend" id="legend"></div>
+    <div class="tree-wrap" id="treeWrap">
+      <div class="state" id="stateMsg">Loading family data…</div>
+    </div>
+    <div class="tooltip" id="tip"></div>
 
-    const lh     = 13;
-    const startY = lines.length === 1 ? p.y : p.y - lh/2;
+    <script>
+      // ═══════════════════════════════════════════════════
+      // BOOTSTRAP — load JSON from ?house= param
+      // ═══════════════════════════════════════════════════
+      const params = new URLSearchParams(window.location.search);
+      const dataFile = params.get("house") || "house_aigner";
+      const stateEl = document.getElementById("stateMsg");
 
-    for (let li = 0; li < lines.length; li++) {
-      g.appendChild(el('text', {
-        x: textCX, y: startY + li * lh,
-        'text-anchor':'middle', 'dominant-baseline':'middle',
-        'font-family':'Cinzel, serif',
-        'font-size': lines[0].length > 10 ? '9' : '10',
-        'font-weight':'600',
-        fill: n.type === 'unknown' ? '#555' : '#ddd3bc',
-        'letter-spacing':'0.02em',
-      }, lines[li]));
-    }
+      fetch(`${dataFile}.json`)
+        .then((r) => {
+          if (!r.ok) throw new Error(r.status);
+          return r.json();
+        })
+        .then((data) => {
+          stateEl.remove();
+          buildTree(data);
+        })
+        .catch((err) => {
+          stateEl.className = "state error";
+          stateEl.textContent = `Could not load "${dataFile}.json" — ${err.message}`;
+        });
 
-    // Badge for spine nodes
-    if (['priestess','current','heir'].includes(n.type) && spine?.enabled) {
-      const badge =
-        n.type === 'current'   ? (spine.badge_current ?? 'CURRENT') :
-        n.type === 'heir'      ? (spine.badge_heir    ?? 'HEIR')    :
-                                  (spine.badge_former  ?? 'FORMER');
-      g.appendChild(el('text', {
-        x: textCX, y: ny + NH - 8,
-        'text-anchor':'middle',
-        'font-family':'Cinzel, serif', 'font-size':'6.5',
-        'letter-spacing':'0.08em',
-        fill: n.type === 'current' ? '#4caf50' : spineColor,
-        opacity:'0.85',
-      }, badge));
-    }
+      // ═══════════════════════════════════════════════════
+      // RENDERER
+      // ═══════════════════════════════════════════════════
+      function buildTree(data) {
+        const { house, subtitle, spine, layout, members } = data;
 
-    // Tooltip
-    g.addEventListener('mouseenter', () => {
-      const parentNames = [n.mother, n.father]
-        .filter(Boolean)
-        .map(id => byId(id)?.label ?? id)
-        .join(' & ');
-      tip.innerHTML = `
+        // ── Layout constants ──
+        const ROW_H = layout?.row_height ?? 130;
+        const NW = layout?.node_w ?? 148;
+        const NH = layout?.node_h ?? 60;
+        const COL_GAP = layout?.col_gap ?? 172;
+        const SPINE_X = spine?.enabled ? (layout?.spine_x ?? 90) : 0;
+        const COL0 = spine?.enabled
+          ? (layout?.col_start ?? 290)
+          : (layout?.col_start ?? 120);
+        const PAD_TOP = 34;
+        const PAD_SIDE = 20;
+
+        const spineColor = spine?.color ?? "#3a8fc4";
+
+        // ── Header ──
+        document.getElementById("houseTitle").textContent = house;
+        document.getElementById("houseSubtitle").textContent = subtitle ?? "";
+        document.title = house;
+
+        // ── Legend ──
+        const legendEl = document.getElementById("legend");
+        const legendItems = [
+          ...(spine?.enabled
+            ? [
+                {
+                  type: "swatch",
+                  fill: "#0f2d47",
+                  stroke: spineColor,
+                  label: spine.label ?? "Succession line",
+                },
+                {
+                  type: "swatch",
+                  fill: "#0f2d47",
+                  stroke: "#4caf50",
+                  label: "Current head",
+                },
+              ]
+            : []),
+          {
+            type: "swatch",
+            fill: "#14141a",
+            stroke: "#35322c",
+            label: "Biological family",
+          },
+          ...(spine?.enabled
+            ? [
+                {
+                  type: "line",
+                  cls: "ll-adoptive",
+                  label: "Institutional succession",
+                },
+                { type: "line", cls: "ll-origin", label: "Chosen from" },
+              ]
+            : []),
+          { type: "line", cls: "ll-bio", label: "Biological descent" },
+          { type: "line", cls: "ll-marriage", label: "Marriage" },
+        ];
+
+        for (const item of legendItems) {
+          const div = document.createElement("div");
+          div.className = "legend-item";
+          if (item.type === "swatch") {
+            div.innerHTML = `<div class="ls" style="background:${item.fill};border-color:${item.stroke}"></div>${item.label}`;
+          } else {
+            div.innerHTML = `<div class="ll ${item.cls}"></div>${item.label}`;
+          }
+          legendEl.appendChild(div);
+        }
+
+        // ── Position map ──
+        function rowY(row) {
+          return PAD_TOP + (row - 1) * ROW_H + ROW_H / 2;
+        }
+        function colX(col) {
+          if (col === "spine") return SPINE_X;
+          return COL0 + (col - 1) * COL_GAP;
+        }
+
+        const pos = {};
+        for (const m of members) {
+          pos[m.id] = { x: colX(m.col), y: rowY(m.row) };
+        }
+
+        function byId(id) {
+          return members.find((m) => m.id === id);
+        }
+
+        // ── Canvas size ──
+        const maxRow = Math.max(...members.map((m) => m.row));
+        const bioCols = members
+          .filter((m) => m.col !== "spine")
+          .map((m) => m.col);
+        const maxCol = bioCols.length ? Math.max(...bioCols) : 1;
+        const svgW = PAD_SIDE + COL0 + (maxCol - 1) * COL_GAP + NW + PAD_SIDE;
+        const svgH = PAD_TOP + maxRow * ROW_H + 40;
+
+        // ── SVG setup ──
+        const NS = "http://www.w3.org/2000/svg";
+        const svg = document.createElementNS(NS, "svg");
+        svg.setAttribute("id", "tree");
+        svg.setAttribute("width", svgW);
+        svg.setAttribute("height", svgH);
+        svg.setAttribute("viewBox", `0 0 ${svgW} ${svgH}`);
+        document.getElementById("treeWrap").appendChild(svg);
+
+        function el(tag, attrs = {}, text = "") {
+          const e = document.createElementNS(NS, tag);
+          for (const [k, v] of Object.entries(attrs)) e.setAttribute(k, v);
+          if (text) e.textContent = text;
+          return e;
+        }
+
+        // ── Defs ──
+        const defs = el("defs");
+        function makeArrow(id, color) {
+          const m = el("marker", {
+            id,
+            markerWidth: "7",
+            markerHeight: "7",
+            refX: "6",
+            refY: "3.5",
+            orient: "auto",
+          });
+          m.appendChild(el("path", { d: "M0,0 L0,7 L7,3.5 z", fill: color }));
+          return m;
+        }
+        defs.appendChild(makeArrow("arr-bio", "#4a4540"));
+        defs.appendChild(makeArrow("arr-adoptive", spineColor));
+        defs.appendChild(makeArrow("arr-origin", "#1a5a8a"));
+        svg.appendChild(defs);
+
+        // ── Layer groups ──
+        const gBg = el("g");
+        const gLines = el("g");
+        const gNodes = el("g");
+        svg.appendChild(gBg);
+        svg.appendChild(gLines);
+        svg.appendChild(gNodes);
+
+        // ── Row bands ──
+        for (let r = 1; r <= maxRow; r++) {
+          const y = rowY(r);
+          if (r % 2 === 0) {
+            gBg.appendChild(
+              el("rect", {
+                x: 0,
+                y: y - NH / 2 - 10,
+                width: svgW,
+                height: NH + 20,
+                fill: "rgba(255,255,255,0.012)",
+              }),
+            );
+          }
+          // row number label
+          const t = el("text", {
+            x: spine?.enabled ? 8 : 6,
+            y: y + 4,
+            fill: "#252528",
+            "font-family": "Cinzel, serif",
+            "font-size": "9",
+            "letter-spacing": "0.06em",
+          });
+          t.textContent = `${toRoman(r)}`;
+          gBg.appendChild(t);
+        }
+
+        // ── Spine divider ──
+        if (spine?.enabled) {
+          gBg.appendChild(
+            el("line", {
+              x1: SPINE_X + NW / 2 + 18,
+              y1: PAD_TOP - 14,
+              x2: SPINE_X + NW / 2 + 18,
+              y2: svgH - 20,
+              stroke: "#1a2a3a",
+              "stroke-width": 1,
+              "stroke-dasharray": "3 7",
+            }),
+          );
+          // spine column label
+          const sl = el("text", {
+            x: SPINE_X,
+            y: PAD_TOP - 14,
+            "text-anchor": "middle",
+            "font-family": "Cinzel, serif",
+            "font-size": "8",
+            "letter-spacing": "0.1em",
+            fill: spineColor,
+            opacity: "0.7",
+          });
+          sl.textContent = (spine.label ?? "Succession Line").toUpperCase();
+          gBg.appendChild(sl);
+        }
+
+        // ── Node colour ──
+        function nodeStyle(type) {
+          switch (type) {
+            case "priestess":
+              return { fill: "#0d2b43", stroke: spineColor, sw: 1.5 };
+            case "current":
+              return { fill: "#0d2b43", stroke: "#4caf50", sw: 2.5 };
+            case "heir":
+              return { fill: "#091e30", stroke: spineColor, sw: 1.5 };
+            case "unknown":
+              return { fill: "#111114", stroke: "#383530", sw: 1.5 };
+            default:
+              return { fill: "#14141a", stroke: "#35322c", sw: 1.5 };
+          }
+        }
+
+        // ── Marriage lines ──
+        const drawnMarriages = new Set();
+        for (const n of members) {
+          if (!n.spouse) continue;
+          const key = [n.id, n.spouse].sort().join("|");
+          if (drawnMarriages.has(key)) continue;
+          drawnMarriages.add(key);
+          const a = pos[n.id],
+            b = pos[n.spouse];
+          if (!a || !b) continue;
+          const left = a.x < b.x ? a : b;
+          const right = a.x < b.x ? b : a;
+          const x1 = left.x + NW / 2;
+          const x2 = right.x - NW / 2;
+          const y = a.y;
+          gLines.appendChild(
+            el("line", {
+              x1,
+              y1: y,
+              x2,
+              y2: y,
+              stroke: "#6a5828",
+              "stroke-width": 1.5,
+            }),
+          );
+          gLines.appendChild(
+            el("circle", { cx: (x1 + x2) / 2, cy: y, r: 3, fill: "#6a5828" }),
+          );
+        }
+
+        // ── Biological descent lines ──
+        // Group children by their parent-pair key
+        const drawnDrops = new Set();
+
+        for (const n of members) {
+          if (n.col === "spine") continue; // spine nodes use origin lines
+          const parents = [n.mother, n.father].filter(Boolean);
+          if (!parents.length) continue;
+
+          const child = pos[n.id];
+          let px, py;
+
+          if (parents.length === 2) {
+            const pa = pos[parents[0]],
+              pb = pos[parents[1]];
+            if (!pa || !pb) continue;
+            px = (pa.x + pb.x) / 2;
+            py = pa.y;
+          } else {
+            const pa = pos[parents[0]];
+            if (!pa) continue;
+            px = pa.x;
+            py = pa.y;
+          }
+
+          const dropKey = `${parents.sort().join("+")}=>${n.id}`;
+          if (drawnDrops.has(dropKey)) continue;
+          drawnDrops.add(dropKey);
+
+          const startY = py + NH / 2;
+          const endY = child.y - NH / 2;
+          const midY = startY + (endY - startY) * 0.45;
+
+          gLines.appendChild(
+            el("path", {
+              d: `M${px},${startY} L${px},${midY} L${child.x},${midY} L${child.x},${endY}`,
+              fill: "none",
+              stroke: "#3a3530",
+              "stroke-width": 1.5,
+              "marker-end": "url(#arr-bio)",
+            }),
+          );
+        }
+
+        // ── Priestess succession (dotted vertical spine) ──
+        if (spine?.enabled) {
+          const spineNodes = members
+            .filter((m) => m.col === "spine")
+            .sort((a, b) => a.row - b.row);
+
+          for (let i = 0; i < spineNodes.length - 1; i++) {
+            const a = spineNodes[i],
+              b = spineNodes[i + 1];
+            // Only draw if b.adoptive === a.id
+            if (b.adoptive !== a.id) continue;
+            const pa = pos[a.id],
+              pb = pos[b.id];
+            gLines.appendChild(
+              el("line", {
+                x1: SPINE_X,
+                y1: pa.y + NH / 2,
+                x2: SPINE_X,
+                y2: pb.y - NH / 2,
+                stroke: spineColor,
+                "stroke-width": 1.5,
+                "stroke-dasharray": "6 4",
+                "marker-end": "url(#arr-adoptive)",
+              }),
+            );
+          }
+        }
+
+        // ── Origin lines (biological parents → spine node) ──
+        if (spine?.enabled) {
+          for (const n of members) {
+            if (n.col !== "spine") continue;
+            const parents = [n.mother, n.father].filter(Boolean);
+            if (!parents.length) continue;
+
+            const spinePos = pos[n.id];
+            const parentRow = byId(parents[0])?.row;
+            if (!parentRow) continue;
+
+            let px;
+            if (parents.length === 2) {
+              const pa = pos[parents[0]],
+                pb = pos[parents[1]];
+              if (!pa || !pb) continue;
+              px = (pa.x + pb.x) / 2;
+            } else {
+              const pa = pos[parents[0]];
+              if (!pa) continue;
+              px = pa.x;
+            }
+
+            const dropY = rowY(parentRow) + NH / 2 + 20;
+            const lineStyle = {
+              stroke: "#1a5a8a",
+              "stroke-width": 1.5,
+              "stroke-dasharray": "5 4",
+            };
+
+            // Drop from parent midpoint
+            gLines.appendChild(
+              el("line", {
+                x1: px,
+                y1: rowY(parentRow) + NH / 2,
+                x2: px,
+                y2: dropY,
+                ...lineStyle,
+              }),
+            );
+
+            // Horizontal run left to spine
+            gLines.appendChild(
+              el("line", {
+                x1: px,
+                y1: dropY,
+                x2: SPINE_X,
+                y2: dropY,
+                ...lineStyle,
+              }),
+            );
+
+            // Drop down to spine node
+            gLines.appendChild(
+              el("line", {
+                x1: SPINE_X,
+                y1: dropY,
+                x2: SPINE_X,
+                y2: spinePos.y - NH / 2,
+                ...lineStyle,
+                "marker-end": "url(#arr-origin)",
+              }),
+            );
+          }
+        }
+
+        // ── Draw nodes ──
+        const tip = document.getElementById("tip");
+
+        for (const n of members) {
+          const p = pos[n.id];
+          const st = nodeStyle(n.type);
+          const nx = p.x - NW / 2;
+          const ny = p.y - NH / 2;
+
+          const g = el("g");
+          g.style.cursor = "default";
+
+          // Shadow
+          g.appendChild(
+            el("rect", {
+              x: nx + 3,
+              y: ny + 3,
+              width: NW,
+              height: NH,
+              rx: 5,
+              ry: 5,
+              fill: "rgba(0,0,0,0.45)",
+            }),
+          );
+
+          // Main rect
+          g.appendChild(
+            el("rect", {
+              x: nx,
+              y: ny,
+              width: NW,
+              height: NH,
+              rx: 5,
+              ry: 5,
+              fill: st.fill,
+              stroke: st.stroke,
+              "stroke-width": st.sw,
+            }),
+          );
+
+          // Portrait slot
+          const PS = NH - 8;
+          const px2 = nx + 4,
+            py2 = ny + 4;
+          g.appendChild(
+            el("rect", {
+              x: px2,
+              y: py2,
+              width: PS,
+              height: PS,
+              rx: 3,
+              ry: 3,
+              fill: "#0a0a0c",
+              stroke: st.stroke,
+              "stroke-width": "0.75",
+              opacity: "0.8",
+            }),
+          );
+
+          // Silhouette icon
+          const scx = px2 + PS / 2;
+          const sg = el("g", { opacity: "0.28" });
+          sg.appendChild(
+            el("circle", {
+              cx: scx,
+              cy: py2 + PS * 0.33,
+              r: PS * 0.18,
+              fill: st.stroke,
+            }),
+          );
+          sg.appendChild(
+            el("path", {
+              d: `M${scx - PS * 0.2},${py2 + PS * 0.96} Q${scx - PS * 0.12},${py2 + PS * 0.58} ${scx},${py2 + PS * 0.56} Q${scx + PS * 0.12},${py2 + PS * 0.58} ${scx + PS * 0.2},${py2 + PS * 0.96}`,
+              fill: st.stroke,
+            }),
+          );
+          g.appendChild(sg);
+
+          // Portrait — image if available, silhouette placeholder if not
+          if (n.img) {
+            const imgEl = el("image", {
+              href: n.img,
+              x: px2,
+              y: py2,
+              width: PS,
+              height: PS,
+              preserveAspectRatio: "xMidYMid slice",
+            });
+            // Clip to rounded rect
+            const clipId = `clip-${n.id}`;
+            const clipPath = el("clipPath", { id: clipId });
+            clipPath.appendChild(
+              el("rect", {
+                x: px2,
+                y: py2,
+                width: PS,
+                height: PS,
+                rx: 3,
+                ry: 3,
+              }),
+            );
+            defs.appendChild(clipPath);
+            imgEl.setAttribute("clip-path", `url(#${clipId})`);
+            g.appendChild(imgEl);
+          } else {
+            const sg = el("g", { opacity: "0.28" });
+            sg.appendChild(
+              el("circle", {
+                cx: scx,
+                cy: py2 + PS * 0.33,
+                r: PS * 0.18,
+                fill: st.stroke,
+              }),
+            );
+            sg.appendChild(
+              el("path", {
+                d: `M${scx - PS * 0.2},${py2 + PS * 0.96} Q${scx - PS * 0.12},${py2 + PS * 0.58} ${scx},${py2 + PS * 0.56} Q${scx + PS * 0.12},${py2 + PS * 0.58} ${scx + PS * 0.2},${py2 + PS * 0.96}`,
+                fill: st.stroke,
+              }),
+            );
+            g.appendChild(sg);
+          }
+
+          // Name — right of portrait
+          const textCX = nx + PS + 10 + (NW - PS - 14) / 2;
+          const words = n.label.split(" ");
+          let lines;
+          if (words.length <= 2) lines = [n.label];
+          else if (words.length === 3)
+            lines = [words.slice(0, 2).join(" "), words[2]];
+          else {
+            const mid = Math.ceil(words.length / 2);
+            lines = [words.slice(0, mid).join(" "), words.slice(mid).join(" ")];
+          }
+
+          const lh = 13;
+          const startY = lines.length === 1 ? p.y : p.y - lh / 2;
+
+          for (let li = 0; li < lines.length; li++) {
+            g.appendChild(
+              el(
+                "text",
+                {
+                  x: textCX,
+                  y: startY + li * lh,
+                  "text-anchor": "middle",
+                  "dominant-baseline": "middle",
+                  "font-family": "Cinzel, serif",
+                  "font-size": lines[0].length > 10 ? "9" : "10",
+                  "font-weight": "600",
+                  fill: n.type === "unknown" ? "#555" : "#ddd3bc",
+                  "letter-spacing": "0.02em",
+                },
+                lines[li],
+              ),
+            );
+          }
+
+          // Badge for spine nodes
+          if (
+            ["priestess", "current", "heir"].includes(n.type) &&
+            spine?.enabled
+          ) {
+            const badge =
+              n.type === "current"
+                ? (spine.badge_current ?? "CURRENT")
+                : n.type === "heir"
+                  ? (spine.badge_heir ?? "HEIR")
+                  : (spine.badge_former ?? "FORMER");
+            g.appendChild(
+              el(
+                "text",
+                {
+                  x: textCX,
+                  y: ny + NH - 8,
+                  "text-anchor": "middle",
+                  "font-family": "Cinzel, serif",
+                  "font-size": "6.5",
+                  "letter-spacing": "0.08em",
+                  fill: n.type === "current" ? "#4caf50" : spineColor,
+                  opacity: "0.85",
+                },
+                badge,
+              ),
+            );
+          }
+
+          // Tooltip
+          g.addEventListener("mouseenter", () => {
+            const parentNames = [n.mother, n.father]
+              .filter(Boolean)
+              .map((id) => byId(id)?.label ?? id)
+              .join(" & ");
+            tip.innerHTML = `
         <span class="tip-name">${n.label}</span>
-        ${n.note       ? `<span class="tip-line">${n.note}</span>`                                      : ''}
-        ${parentNames  ? `<span class="tip-line">Parents: ${parentNames}</span>`                        : ''}
-        ${n.adoptive   ? `<span class="tip-line">Preceded by: ${byId(n.adoptive)?.label ?? n.adoptive}</span>` : ''}
-        ${n.img        ? `<span class="tip-line" style="color:#6a5828">Portrait: ${n.img}</span>`       : ''}
+        ${n.note ? `<span class="tip-line">${n.note}</span>` : ""}
+        ${parentNames ? `<span class="tip-line">Parents: ${parentNames}</span>` : ""}
+        ${n.adoptive ? `<span class="tip-line">Preceded by: ${byId(n.adoptive)?.label ?? n.adoptive}</span>` : ""}
+        ${n.img ? `<span class="tip-line" style="color:#6a5828">Portrait: ${n.img}</span>` : ""}
       `;
-      tip.classList.add('show');
-    });
-    g.addEventListener('mousemove', e => {
-      tip.style.left = (e.clientX + 14) + 'px';
-      tip.style.top  = (e.clientY - 10) + 'px';
-    });
-    g.addEventListener('mouseleave', () => tip.classList.remove('show'));
+            tip.classList.add("show");
+          });
+          g.addEventListener("mousemove", (e) => {
+            tip.style.left = e.clientX + 14 + "px";
+            tip.style.top = e.clientY - 10 + "px";
+          });
+          g.addEventListener("mouseleave", () => tip.classList.remove("show"));
 
-    gNodes.appendChild(g);
-  }
-}
+          gNodes.appendChild(g);
+        }
+      }
 
-// ── Roman numerals helper ──
-function toRoman(n) {
-  const vals = [10,9,5,4,1];
-  const syms = ['X','IX','V','IV','I'];
-  let out = '';
-  for (let i = 0; i < vals.length; i++) {
-    while (n >= vals[i]) { out += syms[i]; n -= vals[i]; }
-  }
-  return out;
-}
-</script>
-</body>
+      // ── Roman numerals helper ──
+      function toRoman(n) {
+        const vals = [10, 9, 5, 4, 1];
+        const syms = ["X", "IX", "V", "IV", "I"];
+        let out = "";
+        for (let i = 0; i < vals.length; i++) {
+          while (n >= vals[i]) {
+            out += syms[i];
+            n -= vals[i];
+          }
+        }
+        return out;
+      }
+    </script>
+  </body>
 </html>
