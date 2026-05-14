@@ -1,0 +1,786 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Velis Arcanum — Chronicle</title>
+<script src="timeline-data.js"></script>
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+    min-height: 100vh;
+    background-color: #e8e2d6;
+    /* padding-bottom leaves room for the editor toggle bar */
+    padding: 2.5rem 2.5rem 56px;
+    background-size: cover;
+  }
+
+  h1 { font-size: 18px; font-weight: 500; color: #2e2921; letter-spacing: 0.01em; margin-bottom: 3px; }
+  .subtitle { font-size: 12px; margin-bottom: 1.75rem; text-shadow: 0 0 3px rgba(220,220,220,0.9);}
+
+  /* ── TIMELINE CARD ────────────────────────────────────────────────────── */
+  .tl-card {
+    position: relative; border: 0.5px solid #c8bfae; border-radius: 12px;
+    padding: 1.5rem; overflow: hidden; isolation: isolate;
+  }
+  .tl-card::before {
+    content: ''; position: absolute; inset: 0; border-radius: inherit;
+    background-image: var(--card-texture, none);
+    background-size: var(--card-texture-size, 600px auto);
+    background-repeat: repeat; z-index: -2;
+  }
+  .tl-card::after {
+    content: ''; position: absolute; inset: 0; border-radius: inherit;
+    background: var(--card-surface, rgba(249,246,240,0.78)); z-index: -1;
+  }
+  .tl-card > * { position: relative; z-index: 1; }
+
+  .card-header { display: flex; align-items: center; gap: 9px; margin-bottom: 14px; padding-bottom: 10px; border-bottom: 0.5px solid #d0c8b8; }
+  .sigil { width: 20px; height: 20px; border: 1.5px solid #9a8870; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 10px; color: #9a8870; flex-shrink: 0; }
+  .card-title { font-size: 13px; font-weight: 500; color: #2e2921; }
+
+  /* ── SCROLLABLE GRID ──────────────────────────────────────────────────────
+     Label column is pinned outside the scroll area.
+     Grid body scrolls horizontally independently.
+     Year width is a fixed pixel value set via --yr-width on .tl-grid-inner.  */
+  .tl-body { display: flex; }
+
+  /* Pinned label column — labels are absolutely positioned by JS after render */
+  .tl-label-col { width: 80px; flex-shrink: 0; position: relative; }
+  .tl-label-float {
+    position: absolute; left: 0; right: 0;
+    display: flex; align-items: center; justify-content: flex-end;
+    padding-right: 10px;
+    /* starts invisible/unpositioned until alignLabels() sets top+height */
+  }
+  .section-label { font-size: 9px; font-weight: 500; letter-spacing: 0.1em; text-transform: uppercase; color: #b0a090; text-align: right; }
+
+  /* Scroll viewport */
+  .tl-scroll-area {
+    flex: 1; overflow-x: auto; overflow-y: visible;
+    scrollbar-width: thin; scrollbar-color: #c8bfae transparent;
+  }
+  .tl-scroll-area::-webkit-scrollbar { height: 6px; }
+  .tl-scroll-area::-webkit-scrollbar-track { background: transparent; }
+  .tl-scroll-area::-webkit-scrollbar-thumb { background: #c8bfae; border-radius: 3px; }
+
+  /* Inner container — its width is total years × yr-width */
+  .tl-grid-inner { display: block; }
+
+  .axis-row { display: flex; border-bottom: 0.5px solid #ccc4b4; border-left: 0.5px solid #d0c8b8; }
+  .year-cell { width: var(--yr-width, 48px); flex-shrink: 0; font-size: 9px; color: #a09080; padding: 0 0 5px 4px; border-left: 0.5px solid #ddd5c5; }
+  .year-cell:first-child { border-left: none; }
+
+  .section-grid { display: flex; flex-direction: column; gap: 4px; padding: 6px 0; border-left: 0.5px solid #d0c8b8; position: relative; }
+
+  .packed-row { position: relative; height: 26px; overflow: visible; }
+  .col-lines { position: absolute; top: 0; left: 0; right: 0; bottom: 0; display: flex; pointer-events: none; overflow: hidden; }
+  .col-line { width: var(--yr-width, 48px); flex-shrink: 0; border-left: 0.5px solid #e4dccb; }
+  .col-line:first-child { border-left: none; }
+
+  .tl-section-divider { height: 0.5px; background: #d0c8b8; margin: 3px 0; }
+
+  .bar {
+    position: absolute; top: 3px; height: 20px; border-radius: 3px;
+    border-left: 2px solid var(--accent, #9a7848);
+    display: flex; align-items: center; padding: 0 8px;
+    font-size: 9px; font-weight: 500; white-space: nowrap;
+    text-decoration: none; color: var(--text-color, #3a2e1e);
+    cursor: pointer; transition: filter 0.15s;
+  }
+  .bar:hover { filter: brightness(0.9); }
+  .bar > span { position: sticky; left: 8px; z-index: 1; pointer-events: none; }
+  .bar::before { content: ''; position: absolute; inset: 0; border-radius: inherit; background-image: var(--bar-texture, none); background-size: var(--bar-texture-size, 300px auto); background-repeat: repeat; z-index: -2; }
+  .bar::after  { content: ''; position: absolute; inset: 0; border-radius: inherit; background: var(--tint, rgba(238,232,218,0.78)); z-index: -1; }
+
+  .point { position: absolute; top: 50%; transform: translateY(-50%); display: flex; align-items: center; gap: 5px; text-decoration: none; cursor: pointer; white-space: nowrap; }
+  .point-dot { width: 9px; height: 9px; border-radius: 50%; flex-shrink: 0; }
+  .point-label { font-size: 9px; font-weight: 500; }
+  .obs { font-size: 8px; margin-left: 4px; opacity: 0.55; }
+
+  .now-line { position: absolute; top: -6px; bottom: -6px; width: 1px; background: #8a6a40; opacity: 0.4; pointer-events: none; z-index: 10; }
+
+  .legend { display: flex; gap: 14px; flex-wrap: wrap; align-items: center; margin-top: 14px; padding-top: 12px; border-top: 0.5px solid #d0c8b8; }
+  .legend-item { display: flex; align-items: center; gap: 5px; font-size: 10px; color: #9a8870; }
+  .legend-dot { width: 7px; height: 7px; border-radius: 50%; background: #9a8870; }
+  .legend-swatch { width: 18px; height: 8px; border-radius: 2px; border-left: 2px solid; }
+  #jump-now:hover { color: #8a6a40 !important; opacity: 0.9; text-decoration: underline; text-underline-offset: 2px; }
+
+  .error-banner { background: #f5e8e0; border: 0.5px solid #c06040; border-radius: 8px; padding: 1rem 1.25rem; color: #6a2810; font-size: 13px; margin-bottom: 1.5rem; }
+
+  /* ════════════════════════════════════════════════════════════════════════
+     EDITOR OVERLAY
+     ════════════════════════════════════════════════════════════════════════ */
+
+  /* Toggle bar — always pinned to bottom */
+  .editor-toggle {
+    position: fixed; bottom: 0; left: 0; right: 0; height: 40px;
+    background: #2a2318; border-top: 0.5px solid #3a3020;
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 0 1.5rem; cursor: pointer; z-index: 100;
+    user-select: none;
+  }
+  .editor-toggle:hover { background: #302920; }
+  .toggle-left { display: flex; align-items: center; gap: 10px; }
+  .toggle-label { font-size: 11px; font-weight: 500; letter-spacing: 0.08em; text-transform: uppercase; color: #9a8a6a; }
+  .toggle-arrow { font-size: 10px; color: #6a5e48; transition: transform 0.25s; }
+  .editor-open .toggle-arrow { transform: rotate(180deg); }
+  .save-btn {
+    padding: 5px 14px; background: #c8a84a; color: #2a1e08;
+    border: none; border-radius: 5px; font-size: 11px; font-weight: 500;
+    cursor: pointer; transition: filter 0.15s;
+  }
+  .save-btn:hover { filter: brightness(1.1); }
+  .save-toast { font-size: 10px; color: #8aba8a; margin-right: 10px; opacity: 0; transition: opacity 0.3s; }
+  .save-toast.show { opacity: 1; }
+
+  /* Sliding panel —
+     The flex chain must be airtight for overflow-y scroll to work:
+       editor-panel (fixed, explicit height, flex col)
+         ed-tabs     (flex-shrink: 0 — never grows)
+         ed-body     (flex: 1, min-height: 0, overflow-y: auto — does the scrolling)
+     Every ancestor of ed-body must NOT have overflow: hidden or auto,
+     and must NOT have an unconstrained height.                              */
+  .editor-panel {
+    position: fixed; bottom: 40px; left: 0; right: 0;
+    height: 48vh; max-height: 560px;
+    background: #231f16;
+    border-top: 0.5px solid #3a3020;
+    transform: translateY(100%);
+    transition: transform 0.28s cubic-bezier(0.4, 0, 0.2, 1);
+    z-index: 99;
+    /* Explicit flex column — children must not escape this height */
+    display: flex; flex-direction: column;
+    overflow: hidden; /* clip anything that escapes the panel boundary */
+  }
+  .editor-open .editor-panel { transform: translateY(0); }
+
+  /* Tab bar — fixed height, never scrolls */
+  .ed-tabs {
+    display: flex; align-items: stretch;
+    border-bottom: 0.5px solid #3a3020;
+    flex-shrink: 0; flex-grow: 0;
+    background: #1e1b12;
+    height: 38px;
+  }
+  .ed-tab {
+    padding: 0 16px; font-size: 11px; color: #6a5e48;
+    cursor: pointer; border: none; background: none;
+    border-bottom: 2px solid transparent;
+    transition: color 0.15s; white-space: nowrap;
+    height: 100%;
+  }
+  .ed-tab:hover { color: #9a8a6a; }
+  .ed-tab.active { color: #e8d8a8; border-bottom-color: #c8a84a; }
+
+  /* ed-body is NOT the scroller — it just fills remaining panel height.
+     Each pane is its own scroll container so there's no ambiguity about
+     what's overflowing what.                                               */
+  .ed-body {
+    flex: 1 1 0;
+    min-height: 0;
+    overflow: hidden;   /* clips panes, does NOT scroll itself */
+    position: relative;
+  }
+  .ed-pane {
+    display: none;
+  }
+  .ed-pane.active {
+    display: block;
+    position: absolute; inset: 0;
+    overflow-y: auto;
+    overflow-x: hidden;
+    padding: 1rem 1.5rem;
+    margin-top: 50px;
+    scrollbar-width: thin;
+    scrollbar-color: #4a4030 transparent;
+  }
+  .ed-pane.active::-webkit-scrollbar { width: 5px; }
+  .ed-pane.active::-webkit-scrollbar-track { background: transparent; }
+  .ed-pane.active::-webkit-scrollbar-thumb { background: #4a4030; border-radius: 3px; }
+
+  /* ── Editor form elements ── */
+  .ed-card { background: rgba(255,255,255,0.04); border: 0.5px solid #3a3020; border-radius: 8px; padding: 12px 14px; margin-bottom: 12px; }
+  .ed-card-title { font-size: 10px; font-weight: 500; letter-spacing: 0.08em; text-transform: uppercase; color: #6a5e48; margin-bottom: 10px; }
+  .ed-row { display: flex; gap: 10px; margin-bottom: 8px; flex-wrap: wrap; }
+  .ed-field { display: flex; flex-direction: column; gap: 3px; min-width: 80px; }
+  .ed-field.grow { flex: 1; }
+  .ed-field label { font-size: 10px; color: #6a5e48; }
+  .ed-field input, .ed-field select {
+    padding: 5px 8px; border: 0.5px solid #3a3020; border-radius: 5px;
+    background: #1a1710; color: #c8b88a; font-size: 11px; font-family: inherit; outline: none;
+  }
+  .ed-field input:focus, .ed-field select:focus { border-color: #9a7848; }
+  .ed-field select option { background: #1a1710; }
+  .range-row { display: flex; align-items: center; gap: 10px; }
+  .range-row input[type=range] { flex: 1; accent-color: #c8a84a; }
+  .range-val { font-size: 11px; color: #c8b88a; min-width: 30px; }
+
+  /* Tint grid */
+  .tint-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 8px; }
+  .tint-card { background: rgba(255,255,255,0.03); border: 0.5px solid #3a3020; border-radius: 6px; padding: 8px 10px; }
+  .tint-header { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; }
+  .tint-preview { width: 28px; height: 14px; border-radius: 2px; border-left: 3px solid; flex-shrink: 0; }
+  .tint-name { font-size: 11px; font-weight: 500; color: #c8b88a; }
+  .tint-fields { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 6px; }
+  .tint-fields label { font-size: 10px; color: #6a5e48; }
+  .tint-fields input { font-size: 10px; padding: 4px 6px; }
+
+  /* Sections */
+  .sec-block { background: rgba(255,255,255,0.03); border: 0.5px solid #3a3020; border-radius: 8px; margin-bottom: 10px; }
+  .sec-head { display: flex; align-items: center; gap: 8px; padding: 8px 12px; background: rgba(255,255,255,0.04); border-bottom: 0.5px solid #3a3020; }
+  .sec-badge { font-size: 9px; background: rgba(200,168,74,0.15); color: #c8a84a; padding: 2px 7px; border-radius: 99px; font-weight: 500; flex-shrink: 0; }
+  .sec-head input { flex: 1; background: transparent; border: none; font-size: 12px; font-weight: 500; color: #e8d8a8; padding: 0; outline: none; min-width: 0; }
+  .sec-head input:focus { border-bottom: 1px solid #9a7848; }
+  .btn-icon { width: 24px; height: 24px; border: 0.5px solid #3a3020; border-radius: 5px; background: transparent; color: #6a5e48; font-size: 12px; cursor: pointer; display: flex; align-items: center; justify-content: center; flex-shrink: 0; transition: background 0.12s; }
+  .btn-icon:hover { background: rgba(255,255,255,0.06); color: #c8b88a; }
+  .btn-icon.danger:hover { background: rgba(180,60,40,0.2); color: #d07060; }
+
+  .items-list { padding: 6px; display: flex; flex-direction: column; gap: 5px; }
+  .item-row { background: rgba(255,255,255,0.03); border: 0.5px solid #3a3020; border-radius: 5px; padding: 6px 8px; display: flex; gap: 6px; align-items: flex-end; flex-wrap: wrap; }
+  .item-row .ed-field label { font-size: 9px; }
+  .item-row .ed-field input, .item-row .ed-field select { font-size: 10px; padding: 4px 6px; }
+  .item-row .ed-field.w-type   { width: 70px; }
+  .item-row .ed-field.w-yr     { width: 58px; }
+  .item-row .ed-field.w-tint   { width: 90px; }
+  .item-row .ed-field.w-label  { flex: 1; min-width: 120px; }
+  .item-row .ed-field.w-obs    { flex: 1; min-width: 140px; }
+
+  .add-item-row { padding: 5px 6px 6px; display: flex; gap: 6px; }
+  .btn-add { padding: 4px 12px; border: 0.5px solid #4a4030; border-radius: 5px; background: transparent; color: #9a8a6a; font-size: 10px; font-weight: 500; cursor: pointer; transition: background 0.12s; }
+  .btn-add:hover { background: rgba(255,255,255,0.06); color: #c8b88a; }
+  .btn-add-section { padding: 6px 14px; border: 0.5px solid #4a4030; border-radius: 6px; background: transparent; color: #9a8a6a; font-size: 11px; font-weight: 500; cursor: pointer; margin-top: 2px; transition: background 0.12s; }
+  .btn-add-section:hover { background: rgba(255,255,255,0.06); color: #c8b88a; }
+</style>
+</head>
+<body>
+
+<h1>History of Endmyre &amp; Liraethis</h1>
+<p class="subtitle">Chronicle of the realm · click any entry to open its vault page</p>
+<div id="error-container"></div>
+<div class="tl-card" id="tl-root"></div>
+
+<!-- ── EDITOR OVERLAY ─────────────────────────────────────────────────────── -->
+<div id="editor-wrap">
+
+  <div class="editor-panel" id="editor-panel">
+    <div class="ed-tabs">
+      <button class="ed-tab active" onclick="edTab('config')">Config</button>
+      <button class="ed-tab"        onclick="edTab('textures')">Textures</button>
+      <button class="ed-tab"        onclick="edTab('tints')">Tints</button>
+      <button class="ed-tab"        onclick="edTab('sections')">Sections &amp; Items</button>
+    </div>
+    <div class="ed-body">
+
+      <!-- CONFIG -->
+      <div class="ed-pane active" id="ed-config">
+        <div class="ed-card">
+          <div class="ed-card-title">Year range</div>
+          <div class="ed-row">
+            <div class="ed-field"><label>Start year</label><input type="number" id="cfg-startYear"></div>
+            <div class="ed-field"><label>End year</label><input type="number" id="cfg-endYear"></div>
+            <div class="ed-field"><label>Current year</label><input type="number" id="cfg-currentYear"></div>
+            <div class="ed-field grow"><label>Vault name</label><input type="text" id="cfg-vault"></div>
+          </div>
+        </div>
+        <div class="ed-card">
+          <div class="ed-card-title">Year width (px) — zoom level of the grid</div>
+          <div class="range-row">
+            <input type="range" min="4" max="120" step="2" id="cfg-yrwidth"
+              oninput="document.getElementById('cfg-yrwidth-val').textContent=this.value+'px'; YR_WIDTH=parseInt(this.value); renderTimeline();">
+            <span class="range-val" id="cfg-yrwidth-val">48px</span>
+          </div>
+        </div>
+          <div class="range-row">
+            <input type="range" min="0" max="1" step="0.01" id="cfg-opacity"
+              oninput="document.getElementById('cfg-opacity-val').textContent=parseFloat(this.value).toFixed(2); state.config.cardSurfaceOpacity=parseFloat(this.value);">
+            <span class="range-val" id="cfg-opacity-val">0.78</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- TEXTURES -->
+      <div class="ed-pane" id="ed-textures">
+        <div class="ed-card">
+          <div class="ed-card-title">Texture paths — relative to timeline.html or absolute</div>
+          <div class="ed-row">
+            <div class="ed-field grow"><label>Page background</label><input type="text" id="tex-page" placeholder="textures/stone.jpg"></div>
+            <div class="ed-field grow"><label>Card / table background</label><input type="text" id="tex-card" placeholder="textures/parchment.jpg"></div>
+          </div>
+          <div class="ed-row">
+            <div class="ed-field grow"><label>Events bar texture</label><input type="text" id="tex-events" placeholder="textures/events-paper.jpg"></div>
+            <div class="ed-field grow"><label>Characters bar texture</label><input type="text" id="tex-characters" placeholder="textures/cloth.jpg"></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- TINTS -->
+      <div class="ed-pane" id="ed-tints">
+        <div class="tint-grid" id="tint-grid"></div>
+      </div>
+
+      <!-- SECTIONS -->
+      <div class="ed-pane" id="ed-sections">
+        <div id="sections-editor"></div>
+        <button class="btn-add-section" onclick="addSection()">+ Add section</button>
+      </div>
+
+    </div>
+  </div>
+
+  <!-- Toggle bar -->
+  <div class="editor-toggle" id="editor-toggle" onclick="toggleEditor()">
+    <div class="toggle-left">
+      <span class="toggle-arrow">▲</span>
+      <span class="toggle-label">Edit timeline</span>
+    </div>
+    <div style="display:flex;align-items:center;gap:10px;" onclick="event.stopPropagation()">
+      <span class="save-toast" id="save-toast">✓ Saved</span>
+      <button class="save-btn" onclick="exportData()">⬇ Save timeline-data.js</button>
+    </div>
+  </div>
+
+</div>
+
+<script>
+/* ═══════════════════════════════════════════════════
+   BOOT — check data loaded
+   ═══════════════════════════════════════════════════ */
+if (typeof TIMELINE_DATA === 'undefined') {
+  document.getElementById('error-container').innerHTML =
+    '<div class="error-banner">Could not load <code>timeline-data.js</code>. Make sure it sits in the same folder as this file.</div>';
+}
+
+/* ═══════════════════════════════════════════════════
+   STATE
+   ═══════════════════════════════════════════════════ */
+const DEFAULT_DATA = {
+  config: { startYear:1, endYear:12, currentYear:9, vault:'VelisArcanum', cardSurfaceOpacity:0.78,
+            textures:{ page:'', card:'', events:'', characters:'' } },
+  tints: {
+    lore:      { tint:'rgba(225,215,195,0.78)', accent:'#9a7848', text:'#3a2e1e' },
+    war:       { tint:'rgba(205,178,162,0.78)', accent:'#8a4830', text:'#3a1a0e' },
+    intrigue:  { tint:'rgba(200,188,218,0.78)', accent:'#705890', text:'#2e2040' },
+    civic:     { tint:'rgba(198,208,192,0.78)', accent:'#5a6848', text:'#202818' },
+    political: { tint:'rgba(218,208,175,0.78)', accent:'#807040', text:'#302810' },
+    noble:     { tint:'rgba(205,192,222,0.78)', accent:'#68509a', text:'#2a1e48' },
+    faculty:   { tint:'rgba(215,208,188,0.78)', accent:'#7a6838', text:'#302a18' },
+    student:   { tint:'rgba(188,210,200,0.78)', accent:'#4a6858', text:'#182820' },
+  },
+  sections: [
+    { id:'events',     label:'Events',     items:[] },
+    { id:'characters', label:'Characters', items:[] }
+  ]
+};
+
+const state = typeof TIMELINE_DATA !== 'undefined'
+  ? JSON.parse(JSON.stringify(TIMELINE_DATA))
+  : JSON.parse(JSON.stringify(DEFAULT_DATA));
+if (!state.config.textures) state.config.textures = { page:'', card:'', events:'', characters:'' };
+
+/* ═══════════════════════════════════════════════════
+   TIMELINE RENDERER
+   ═══════════════════════════════════════════════════ */
+const obsUrl = path   => `obsidian://open?vault=${encodeURIComponent(state.config.vault)}&file=${encodeURIComponent(path)}`;
+
+function applyTextures() {
+  const t  = state.config.textures;
+  const op = state.config.cardSurfaceOpacity != null ? state.config.cardSurfaceOpacity : 0.78;
+  if (t.page) document.body.style.backgroundImage = `url('${t.page}')`;
+  const card = document.getElementById('tl-root');
+  if (t.card) card.style.setProperty('--card-texture', `url('${t.card}')`);
+  injectStyle('card-surface', `.tl-card::after { background: rgba(249,246,240,${op}); }`);
+  if (t.events)     injectStyle('tex-events',     `.tex-events::before     { background-image: url('${t.events}'); }`);
+  if (t.characters) injectStyle('tex-characters', `.tex-characters::before { background-image: url('${t.characters}'); }`);
+}
+
+function injectStyle(id, css) {
+  let el = document.getElementById('injected-' + id);
+  if (!el) { el = document.createElement('style'); el.id = 'injected-' + id; document.head.appendChild(el); }
+  el.textContent = css;
+}
+
+function packRows(items) {
+  const occ = [], rowIdx = [];
+  items.forEach(item => {
+    const s = item.type === 'point' ? item.year        : item.start;
+    const e = item.type === 'point' ? item.year + 0.85 : item.end;
+    let placed = false;
+    for (let r = 0; r < occ.length; r++) {
+      if (!occ[r].some(iv => s < iv.end && e > iv.start)) {
+        occ[r].push({ start:s, end:e }); rowIdx.push(r); placed = true; break;
+      }
+    }
+    if (!placed) { occ.push([{ start:s, end:e }]); rowIdx.push(occ.length - 1); }
+  });
+  const rows = Array.from({ length: occ.length }, () => []);
+  items.forEach((item, i) => rows[rowIdx[i]].push(item));
+  return rows;
+}
+
+function makeItem(item, sectionId) {
+  const p = (state.tints && state.tints[item.tint]) || DEFAULT_DATA.tints.lore;
+  const a = document.createElement('a');
+  a.href = obsUrl(item.obs);
+  const startYear = state.config.startYear;
+  if (item.type === 'point') {
+    a.className = 'point';
+    a.style.left = ((item.year - startYear) * YR_WIDTH + 2) + 'px';
+    a.innerHTML  = `<div class="point-dot" style="background:${p.accent}"></div>
+                    <span class="point-label" style="color:${p.text}">${item.label}<span class="obs">↗</span></span>`;
+  } else {
+    a.className = `bar tex-${sectionId}`;
+    a.style.left  = ((item.start - startYear) * YR_WIDTH + 1) + 'px';
+    a.style.width = ((item.end - item.start) * YR_WIDTH - 2) + 'px';
+    a.style.setProperty('--tint',       p.tint);
+    a.style.setProperty('--accent',     p.accent);
+    a.style.setProperty('--text-color', p.text);
+    a.style.color = p.text;
+    a.innerHTML   = `<span>${item.label}<span class="obs">↗</span></span>`;
+  }
+  return a;
+}
+
+/* Pixels per year — governs scroll width. Adjust in CONFIG or here directly. */
+let YR_WIDTH = 68;
+
+function renderTimeline() {
+  applyTextures();
+  const root = document.getElementById('tl-root');
+  const cfg  = state.config;
+  const totalYears = cfg.endYear - cfg.startYear;
+
+  root.innerHTML = `
+    <div class="card-header">
+      <div class="sigil">✦</div>
+      <span class="card-title">${cfg.vault} — Chronicle</span>
+    </div>`;
+
+  /* Build packed rows per section up front */
+  const packedSections = state.sections.map(s => ({ section: s, rows: packRows(s.items) }));
+
+  /* ── LEFT: pinned label column — labels positioned after render via JS ── */
+  const labelCol = document.createElement('div');
+  labelCol.className = 'tl-label-col';
+  labelCol.style.position = 'relative'; /* anchor for absolute labels */
+
+  /* Placeholder labels — invisible until alignLabels() positions them */
+  packedSections.forEach(({ section }) => {
+    const lbl = document.createElement('div');
+    lbl.className = 'tl-label-float';
+    lbl.dataset.sectionId = section.id;
+    lbl.innerHTML = `<span class="section-label">${section.label}</span>`;
+    labelCol.appendChild(lbl);
+  });
+
+  /* ── RIGHT: scrollable grid ── */
+  const scrollArea = document.createElement('div');
+  scrollArea.className = 'tl-scroll-area';
+
+  const gridInner = document.createElement('div');
+  gridInner.className = 'tl-grid-inner';
+  gridInner.style.setProperty('--yr-width', YR_WIDTH + 'px');
+  gridInner.style.width = (totalYears * YR_WIDTH) + 'px';
+
+  /* Axis */
+  const axisRow = document.createElement('div');
+  axisRow.className = 'axis-row';
+  const labelEvery = YR_WIDTH < 20 ? 10 : YR_WIDTH < 36 ? 5 : 1;
+  for (let y = cfg.startYear; y < cfg.endYear; y++) {
+    const c = document.createElement('div');
+    c.className = 'year-cell';
+    c.textContent = ((y - cfg.startYear) % labelEvery === 0) ? 'Yr ' + y : '';
+    axisRow.appendChild(c);
+  }
+  gridInner.appendChild(axisRow);
+
+  /* Sections — tag each grid with its section id for label alignment */
+  packedSections.forEach(({ section, rows }, si) => {
+    if (si > 0) {
+      const div = document.createElement('div');
+      div.className = 'tl-section-divider';
+      gridInner.appendChild(div);
+    }
+    const gEl = document.createElement('div');
+    gEl.className = 'section-grid';
+    gEl.dataset.sectionId = section.id; /* used by alignLabels */
+
+    const nl = document.createElement('div');
+    nl.className = 'now-line';
+    nl.style.left = ((cfg.currentYear - cfg.startYear) * YR_WIDTH) + 'px';
+    gEl.appendChild(nl);
+
+    rows.forEach(rowItems => {
+      const rEl = document.createElement('div');
+      rEl.className = 'packed-row';
+      rEl.style.width = (totalYears * YR_WIDTH) + 'px';
+      const ln = document.createElement('div');
+      ln.className = 'col-lines';
+      for (let y = 0; y < totalYears; y++) {
+        const l = document.createElement('div'); l.className = 'col-line'; ln.appendChild(l);
+      }
+      rEl.appendChild(ln);
+      rowItems.forEach(item => rEl.appendChild(makeItem(item, section.id)));
+      gEl.appendChild(rEl);
+    });
+    gridInner.appendChild(gEl);
+  });
+
+  scrollArea.appendChild(gridInner);
+
+  /* Assemble body */
+  const body = document.createElement('div');
+  body.className = 'tl-body';
+  body.appendChild(labelCol);
+  body.appendChild(scrollArea);
+  root.appendChild(body);
+
+  /* Legend */
+  const legend = document.createElement('div');
+  legend.className = 'legend';
+  legend.innerHTML = `
+    <div class="legend-item"><div class="legend-dot"></div> Point event</div>
+    <div class="legend-item"><div class="legend-swatch" style="background:rgba(225,215,195,0.78);border-left-color:#9a7848;"></div> Duration span</div>
+    <div style="flex:1"></div>
+    <div class="legend-item" id="jump-now" style="color:#8a6a40;cursor:pointer;user-select:none;" title="Jump to current year">▎ Current year (${cfg.currentYear})</div>`;
+  root.appendChild(legend);
+
+  /* After the DOM is painted, align labels to actual grid positions */
+  requestAnimationFrame(() => {
+    alignLabels(body, labelCol, gridInner);
+    scrollToCurrentYear();
+  });
+
+  document.getElementById('jump-now').addEventListener('click', scrollToCurrentYear);
+}
+
+/* Read each section-grid's offsetTop, set matching label to that position.
+   gridInner and labelCol are siblings inside .tl-body. The grid's offsetTop
+   is relative to gridInner; we add the axis row's height to get the correct
+   offset within the label column's coordinate space. */
+function alignLabels(body, labelCol, gridInner) {
+  const axisHeight = gridInner.querySelector('.axis-row')
+    ? gridInner.querySelector('.axis-row').offsetHeight
+    : 0;
+
+  const grids = gridInner.querySelectorAll('.section-grid');
+  grids.forEach(grid => {
+    const id  = grid.dataset.sectionId;
+    const lbl = labelCol.querySelector(`[data-section-id="${id}"]`);
+    if (!lbl) return;
+    lbl.style.top    = (axisHeight + grid.offsetTop) + 'px';
+    lbl.style.height = grid.offsetHeight + 'px';
+  });
+}
+
+function scrollToCurrentYear() {
+  const area = document.querySelector('.tl-scroll-area');
+  if (!area) return;
+  const cfg        = state.config;
+  const nowPx      = (cfg.currentYear - cfg.startYear) * YR_WIDTH;
+  const centerOffset = area.clientWidth / 2;
+  area.scrollLeft  = nowPx - centerOffset;
+}
+
+/* ═══════════════════════════════════════════════════
+   EDITOR TOGGLE
+   ═══════════════════════════════════════════════════ */
+let editorOpen = false;
+function toggleEditor() {
+  editorOpen = !editorOpen;
+  document.getElementById('editor-wrap').classList.toggle('editor-open', editorOpen);
+  if (editorOpen) initEditorFields();
+}
+
+/* ═══════════════════════════════════════════════════
+   EDITOR TABS
+   ═══════════════════════════════════════════════════ */
+function edTab(id) {
+  document.querySelectorAll('.ed-tab').forEach((t, i) => {
+    const ids = ['config','textures','tints','sections'];
+    t.classList.toggle('active', ids[i] === id);
+  });
+  document.querySelectorAll('.ed-pane').forEach(p => p.classList.remove('active'));
+  document.getElementById('ed-' + id).classList.add('active');
+  if (id === 'sections') renderSectionsEditor();
+  if (id === 'tints')    renderTints();
+}
+
+/* ═══════════════════════════════════════════════════
+   EDITOR: CONFIG
+   ═══════════════════════════════════════════════════ */
+function initEditorFields() {
+  const c = state.config;
+  setVal('cfg-startYear',   c.startYear);
+  setVal('cfg-endYear',     c.endYear);
+  setVal('cfg-currentYear', c.currentYear);
+  setVal('cfg-vault',       c.vault);
+  const op = c.cardSurfaceOpacity != null ? c.cardSurfaceOpacity : 0.78;
+  document.getElementById('cfg-opacity').value = op;
+  document.getElementById('cfg-opacity-val').textContent = parseFloat(op).toFixed(2);
+
+  ['startYear','endYear','currentYear'].forEach(k => {
+    const el = document.getElementById('cfg-'+k);
+    el.oninput = e => { state.config[k] = parseInt(e.target.value)||0; };
+  });
+  document.getElementById('cfg-vault').oninput = e => { state.config.vault = e.target.value; };
+
+  const yrEl = document.getElementById('cfg-yrwidth');
+  if (yrEl) { yrEl.value = YR_WIDTH; document.getElementById('cfg-yrwidth-val').textContent = YR_WIDTH + 'px'; }
+
+  const t = c.textures;
+  ['page','card','events','characters'].forEach(k => {
+    const el = document.getElementById('tex-'+k);
+    el.value   = t[k] || '';
+    el.oninput = e => { state.config.textures[k] = e.target.value; };
+  });
+
+  renderTints();
+}
+
+function setVal(id, val) { const el = document.getElementById(id); if (el) el.value = val; }
+
+/* ═══════════════════════════════════════════════════
+   EDITOR: TINTS
+   ═══════════════════════════════════════════════════ */
+function renderTints() {
+  const grid = document.getElementById('tint-grid');
+  if (!grid) return;
+  grid.innerHTML = '';
+  Object.entries(state.tints).forEach(([name, t]) => {
+    const card = document.createElement('div');
+    card.className = 'tint-card';
+    card.innerHTML = `
+      <div class="tint-header">
+        <div class="tint-preview" id="tprev-${name}" style="background:${t.tint};border-left-color:${t.accent};"></div>
+        <span class="tint-name">${name}</span>
+      </div>
+      <div class="tint-fields">
+        <div><label>Tint (rgba)</label><input type="text" value="${t.tint}"   oninput="updateTint('${name}','tint',this.value)"></div>
+        <div><label>Accent</label>     <input type="text" value="${t.accent}" oninput="updateTint('${name}','accent',this.value)"></div>
+        <div><label>Text</label>       <input type="text" value="${t.text}"   oninput="updateTint('${name}','text',this.value)"></div>
+      </div>`;
+    grid.appendChild(card);
+  });
+}
+
+function updateTint(name, prop, val) {
+  state.tints[name][prop] = val;
+  const prev = document.getElementById('tprev-' + name);
+  if (prev) { prev.style.background = state.tints[name].tint; prev.style.borderLeftColor = state.tints[name].accent; }
+}
+
+/* ═══════════════════════════════════════════════════
+   EDITOR: SECTIONS
+   ═══════════════════════════════════════════════════ */
+function renderSectionsEditor() {
+  const wrap = document.getElementById('sections-editor');
+  if (!wrap) return;
+  wrap.innerHTML = '';
+  state.sections.forEach((sec, si) => {
+    const block = document.createElement('div');
+    block.className = 'sec-block';
+    block.innerHTML = `
+      <div class="sec-head">
+        <span class="sec-badge">${sec.id}</span>
+        <input type="text" value="${sec.label}" placeholder="Section label"
+          oninput="state.sections[${si}].label=this.value;">
+        <button class="btn-icon danger" title="Delete section" onclick="deleteSection(${si})">✕</button>
+      </div>
+      <div class="items-list" id="items-${si}"></div>
+      <div class="add-item-row">
+        <button class="btn-add" onclick="addItem(${si},'span')">+ Span</button>
+        <button class="btn-add" onclick="addItem(${si},'point')">+ Point</button>
+      </div>`;
+    wrap.appendChild(block);
+    renderItems(si);
+  });
+}
+
+function renderItems(si) {
+  const list = document.getElementById('items-' + si);
+  if (!list) return;
+  list.innerHTML = '';
+  state.sections[si].items.forEach((item, ii) => {
+    const row = document.createElement('div');
+    row.className = 'item-row';
+    const tintOpts = Object.keys(state.tints).map(k =>
+      `<option value="${k}"${k===item.tint?' selected':''}>${k}</option>`).join('');
+    const timeFields = item.type === 'span'
+      ? `<div class="ed-field w-yr"><label>Start</label><input type="number" value="${item.start}" oninput="updateItem(${si},${ii},'start',+this.value)"></div>
+         <div class="ed-field w-yr"><label>End</label>  <input type="number" value="${item.end}"   oninput="updateItem(${si},${ii},'end',+this.value)"></div>`
+      : `<div class="ed-field w-yr"><label>Year</label> <input type="number" value="${item.year}"  oninput="updateItem(${si},${ii},'year',+this.value)"></div>`;
+    row.innerHTML = `
+      <div class="ed-field w-type"><label>Type</label>
+        <select onchange="changeItemType(${si},${ii},this.value)">
+          <option value="span"${item.type==='span'?' selected':''}>Span</option>
+          <option value="point"${item.type==='point'?' selected':''}>Point</option>
+        </select></div>
+      <div class="ed-field w-label"><label>Label</label><input type="text" value="${item.label}" oninput="updateItem(${si},${ii},'label',this.value)"></div>
+      ${timeFields}
+      <div class="ed-field w-tint"><label>Tint</label><select onchange="updateItem(${si},${ii},'tint',this.value)">${tintOpts}</select></div>
+      <div class="ed-field w-obs"><label>Obsidian path</label><input type="text" value="${item.obs}" oninput="updateItem(${si},${ii},'obs',this.value)" placeholder="Events/Name"></div>
+      <button class="btn-icon danger" title="Remove" onclick="deleteItem(${si},${ii})">✕</button>`;
+    list.appendChild(row);
+  });
+}
+
+function updateItem(si, ii, key, val) { state.sections[si].items[ii][key] = val; }
+
+function changeItemType(si, ii, newType) {
+  const item = state.sections[si].items[ii];
+  if (newType === 'span' && item.type === 'point') { item.start = item.year; item.end = item.year + 1; delete item.year; }
+  else if (newType === 'point' && item.type === 'span') { item.year = item.start; delete item.start; delete item.end; }
+  item.type = newType;
+  renderItems(si);
+}
+
+function addItem(si, type) {
+  const mid  = Math.round((state.config.startYear + state.config.endYear) / 2);
+  const item = type === 'span'
+    ? { type:'span',  start:mid, end:mid+2, label:'New event', tint:Object.keys(state.tints)[0], obs:'Events/NewEvent' }
+    : { type:'point', year:mid,             label:'New event', tint:Object.keys(state.tints)[0], obs:'Events/NewEvent' };
+  state.sections[si].items.push(item);
+  renderItems(si);
+}
+
+function deleteItem(si, ii) { state.sections[si].items.splice(ii, 1); renderItems(si); }
+
+function addSection() {
+  const id = 'section' + (state.sections.length + 1);
+  state.sections.push({ id, label:'New section', items:[] });
+  renderSectionsEditor();
+}
+
+function deleteSection(si) {
+  if (!confirm('Delete this section and all its items?')) return;
+  state.sections.splice(si, 1);
+  renderSectionsEditor();
+}
+
+/* ═══════════════════════════════════════════════════
+   APPLY & SAVE
+   ═══════════════════════════════════════════════════ */
+function exportData() {
+  renderTimeline(); /* re-render with latest state */
+  const output = `const TIMELINE_DATA = ${JSON.stringify(state, null, 2)};\n`;
+  const blob   = new Blob([output], { type:'text/javascript' });
+  const url    = URL.createObjectURL(blob);
+  const a      = document.createElement('a');
+  a.href = url; a.download = 'timeline-data.js';
+  document.body.appendChild(a); a.click();
+  document.body.removeChild(a); URL.revokeObjectURL(url);
+  const toast = document.getElementById('save-toast');
+  toast.classList.add('show');
+  setTimeout(() => toast.classList.remove('show'), 2500);
+}
+
+/* ═══════════════════════════════════════════════════
+   INIT
+   ═══════════════════════════════════════════════════ */
+renderTimeline();
+</script>
+</body>
+</html>
